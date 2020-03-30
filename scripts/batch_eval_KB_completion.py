@@ -22,7 +22,9 @@ from multiprocessing.pool import ThreadPool
 import multiprocessing
 import lama.evaluation_metrics as metrics
 import time, sys
+import random
 
+MAX_CONTEXT_LEN = 100
 
 def load_file(filename):
     data = []
@@ -48,12 +50,19 @@ def create_logdir_with_timestamp(base_logdir, modelname):
     return log_directory
 
 
-def parse_template(template, subject_label, object_label):
+def parse_template(template, subject_label, object_label, context):
     SUBJ_SYMBOL = "[X]"
     OBJ_SYMBOL = "[Y]"
     template = template.replace(SUBJ_SYMBOL, subject_label)
     template = template.replace(OBJ_SYMBOL, object_label)
-    return [template]
+
+    # CONTEXT PROBING
+    if context:
+        # template = context + ' ' + template
+        # print('TEMPLATE:', template)
+        return [context, template]
+    else:
+        return [template]
 
 
 def init_logging(log_directory):
@@ -98,7 +107,9 @@ def batchify(data, batch_size):
     for sample in sorted(
         data, key=lambda k: len(" ".join(k["masked_sentences"]).split())
     ):
+        # print('CONTEXT:', sample['context'])
         masked_sentences = sample["masked_sentences"]
+        # print('MASKED SENT:', masked_sentences)
         current_samples_batch.append(sample)
         current_sentences_batches.append(masked_sentences)
         c += 1
@@ -299,7 +310,7 @@ def filter_samples(model, samples, vocab_subset, max_sentence_length, template):
     return new_samples, msg
 
 
-def main(args, shuffle_data=True, model=None):
+def main(args, shuffle_data=True, model=None, use_context=False, synthetic=False):
 
     if len(args.models_names) > 1:
         raise ValueError('Please specify a single language model (e.g., --lm "bert").')
@@ -407,20 +418,80 @@ def main(args, shuffle_data=True, model=None):
             sub = sample["sub_label"]
             obj = sample["obj_label"]
             if (sub, obj) not in facts:
-                facts.append((sub, obj))
+                ######################### CONTEXT PROBING #########################
+                if use_context:
+                    valid_contexts = []
+                    evidences = sample['evidences']
+                    for evidence in evidences:
+                        ctx = evidence['masked_sentence']
+                        obj_surface = evidence['obj_surface']
+                        # Only consider context samples where object surface == true object label, and grab the first one
+                        if obj_surface == obj:
+                            valid_contexts.append(ctx)
+                    # Randomly pick a context sentence that has obj_surface equal to the obj_label
+                    if not valid_contexts:
+                        print('Invalid fact with no context - sub: {}, obj: {}'.format(sub, obj))
+                    else:
+                        context = random.choice(valid_contexts)
+                        context_words = context.split()
+                        if len(context_words) > MAX_CONTEXT_LEN:
+                            # If context is too long, use the first X tokens (it's ok if obj isn't included)
+                            context = ' '.join(context_words[:MAX_CONTEXT_LEN])
+                            print('Sample context too long ({}), truncating.'.format(len(context_words)))
+                        context = context.replace(base.MASK, obj_surface)
+                        facts.append((sub, obj, context))
+                ###################################################################
+                else:
+                    facts.append((sub, obj))
+
+        if synthetic:
+            # Gather all UNIQUE objects
+            unique_objs = []
+            for fact in facts:
+                (sub, obj, ctx) = fact
+                unique_objs.append(obj)
+            unique_objs = set(unique_objs)
+            # print('UNIQUE OBJECTS:', unique_objs)
+
+            # Iterate through each fact and assign it a different UNIQUE object and replace the current obj in context
+            synth_facts = []
+            for fact in facts:
+                (sub, obj, ctx) = fact
+                synth_obj = random.choice([x for x in unique_objs if x != obj])
+                synth_ctx = ctx.replace(obj, synth_obj)
+                synth_facts.append((sub, synth_obj, synth_ctx))
+
+            # Replace facts with synthetic facts
+            facts = synth_facts
+
+        print('Number of facts:', len(facts))
         local_msg = "distinct template facts: {}".format(len(facts))
         logger.info("\n" + local_msg + "\n")
         print(local_msg)
         all_samples = []
         for fact in facts:
-            (sub, obj) = fact
-            sample = {}
-            sample["sub_label"] = sub
-            sample["obj_label"] = obj
-            # sobstitute all sentences with a standard template
-            sample["masked_sentences"] = parse_template(
-                args.template.strip(), sample["sub_label"].strip(), base.MASK
-            )
+            if use_context:
+                (sub, obj, context) = fact
+                # print('Sub: {}, Obj: {}, Ctx: {}'.format(sub, obj, context))
+                sample = {}
+                sample['sub_label'] = sub
+                sample['obj_label'] = obj
+                sample['context'] = context
+                sample["masked_sentences"] = parse_template(
+                    args.template.strip(), sample["sub_label"].strip(), base.MASK, context
+                )
+                all_samples.append(sample)
+            else:
+                (sub, obj) = fact
+                sample = {}
+                sample["sub_label"] = sub
+                sample["obj_label"] = obj
+                # sobstitute all sentences with a standard template
+                sample["masked_sentences"] = parse_template(
+                    args.template.strip(), sample["sub_label"].strip(), base.MASK, None
+                )
+                all_samples.append(sample)
+
             if args.use_negated_probes:
                 # substitute all negated sentences with a standard template
                 sample["negated"] = parse_template(
@@ -428,7 +499,7 @@ def main(args, shuffle_data=True, model=None):
                     sample["sub_label"].strip(),
                     base.MASK,
                 )
-            all_samples.append(sample)
+                all_samples.append(sample)
 
     # create uuid if not present
     i = 0
@@ -461,6 +532,7 @@ def main(args, shuffle_data=True, model=None):
 
         samples_b = samples_batches[i]
         sentences_b = sentences_batches[i]
+        # print('SENT B:', sentences_b)
 
         (
             original_log_probs_list,
@@ -655,9 +727,9 @@ def main(args, shuffle_data=True, model=None):
 
     msg = "all_samples: {}\n".format(len(all_samples))
     msg += "list_of_results: {}\n".format(len(list_of_results))
-    msg += "global MRR: {}\n".format(MRR)
-    msg += "global Precision at 10: {}\n".format(Precision)
-    msg += "global Precision at 1: {}\n".format(Precision1)
+    msg += "global MRR: {}\n".format(round(MRR, 7))
+    msg += "global Precision at 10: {}\n".format(round(Precision, 7))
+    msg += "global Precision at 1: {}\n".format(round(Precision1, 7))
 
     if args.use_negated_probes:
         Overlap /= num_valid_negation
