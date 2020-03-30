@@ -72,3 +72,5 @@ LAMA-Internal/
 data/
 last_results.csv
 output/
+out/
+.vscode/

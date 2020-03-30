@@ -218,6 +218,7 @@ class Bert(Base_Connector):
             self.try_cuda()
 
         tokens_tensor, segments_tensor, attention_mask_tensor, masked_indices_list, tokenized_text_list = self.__get_input_tensors_batch(sentences_list)
+        # print('SEGMENTS:', segments_tensor)
 
         if logger is not None:
             logger.debug("\n{}\n".format(tokenized_text_list))
