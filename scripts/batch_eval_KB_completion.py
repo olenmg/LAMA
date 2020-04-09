@@ -307,6 +307,7 @@ def filter_samples(model, samples, vocab_subset, max_sentence_length, template):
             )
             samples_exluded += 1
     msg += "samples exluded  : {}\n".format(samples_exluded)
+    # print('MSG:', msg)
     return new_samples, msg
 
 
@@ -414,14 +415,18 @@ def main(args, shuffle_data=True, model=None, use_context=False, synthetic=False
     # if template is active (1) use a single example for (sub,obj) and (2) ...
     if args.template and args.template != "":
         facts = []
+        num_invalid_facts = 0
         for sample in all_samples:
             sub = sample["sub_label"]
             obj = sample["obj_label"]
+            
             if (sub, obj) not in facts:
-                ######################### CONTEXT PROBING #########################
                 if use_context:
-                    valid_contexts = []
                     evidences = sample['evidences']
+                    # To make the number of samples used between open-book and closed-book probe
+                    # settings, we need to only consider facts that include context sentences
+                    valid_contexts = []
+                    # For each evidence, replace [MASK] in the masked sentence with obj_surface. But the actual answer/object should be obj_label
                     for evidence in evidences:
                         ctx = evidence['masked_sentence']
                         obj_surface = evidence['obj_surface']
@@ -430,7 +435,8 @@ def main(args, shuffle_data=True, model=None, use_context=False, synthetic=False
                             valid_contexts.append(ctx)
                     # Randomly pick a context sentence that has obj_surface equal to the obj_label
                     if not valid_contexts:
-                        print('Invalid fact with no context - sub: {}, obj: {}'.format(sub, obj))
+                        # print('Invalid fact with no context - sub: {}, obj: {}'.format(sub, obj))
+                        num_invalid_facts += 1
                     else:
                         context = random.choice(valid_contexts)
                         context_words = context.split()
@@ -440,9 +446,12 @@ def main(args, shuffle_data=True, model=None, use_context=False, synthetic=False
                             print('Sample context too long ({}), truncating.'.format(len(context_words)))
                         context = context.replace(base.MASK, obj_surface)
                         facts.append((sub, obj, context))
-                ###################################################################
                 else:
                     facts.append((sub, obj))
+
+        # print('Total facts before:', len(all_samples))
+        # print('Invalid facts:', num_invalid_facts)
+        # print('Total facts after:', len(facts))
 
         if synthetic:
             # Gather all UNIQUE objects
@@ -727,9 +736,9 @@ def main(args, shuffle_data=True, model=None, use_context=False, synthetic=False
 
     msg = "all_samples: {}\n".format(len(all_samples))
     msg += "list_of_results: {}\n".format(len(list_of_results))
-    msg += "global MRR: {}\n".format(round(MRR, 7))
-    msg += "global Precision at 10: {}\n".format(round(Precision, 7))
-    msg += "global Precision at 1: {}\n".format(round(Precision1, 7))
+    msg += "global MRR: {}\n".format(MRR)
+    msg += "global Precision at 10: {}\n".format(Precision)
+    msg += "global Precision at 1: {}\n".format(Precision1)
 
     if args.use_negated_probes:
         Overlap /= num_valid_negation
@@ -761,13 +770,14 @@ def main(args, shuffle_data=True, model=None, use_context=False, synthetic=False
     print("\n" + msg + "\n")
 
     # dump pickle with the result of the experiment
-    all_results = dict(
-        list_of_results=list_of_results, global_MRR=MRR, global_P_at_10=Precision
-    )
-    with open("{}/result.pkl".format(log_directory), "wb") as f:
-        pickle.dump(all_results, f)
+    # TODO: uncomment pickle stuff later
+    # all_results = dict(
+    #     list_of_results=list_of_results, global_MRR=MRR, global_P_at_10=Precision
+    # )
+    # with open("{}/result.pkl".format(log_directory), "wb") as f:
+    #     pickle.dump(all_results, f)
 
-    return Precision1
+    return MRR, Precision, Precision1
 
 
 if __name__ == "__main__":
