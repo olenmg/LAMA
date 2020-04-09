@@ -16,6 +16,8 @@ from os.path import isfile, join
 from shutil import copyfile
 from collections import defaultdict
 
+from operator import itemgetter
+
 LMs = [
     # {
     #     "lm":
@@ -70,6 +72,8 @@ def run_experiments(
     relations,
     data_path_pre,
     data_path_post,
+    metrics,
+    dataset_type,
     input_param={
         "lm": "bert",
         "label": "bert_large",
@@ -87,16 +91,23 @@ def run_experiments(
 
     results_file = open("last_results.csv", "w+")
 
+    # TODO: remove
+    pp_list = []
+
     for relation in relations:
         pp.pprint(relation)
         PARAMETERS = {
-            # Original
+            # ConceptNet, etc
             # "dataset_filename": "{}{}{}".format(
             #     data_path_pre, relation["relation"], data_path_post
             # ),
-            # Google RE and TREx
-            "dataset_filename": "{}/{}/{}".format(
-                data_path_pre, relation["relation"], data_path_post
+            # # Google RE and TREx
+            # "dataset_filename": "{}/{}/{}".format(
+            #     data_path_pre, relation["relation"], data_path_post
+            # ),
+            # TEMP
+            "dataset_filename": "{}/{}/{}{}".format(
+                data_path_pre, relation["relation"], relation["relation"], data_path_post
             ),
             "common_vocab_filename": "pre-trained_language_models/common_vocab_cased.txt",
             "template": "",
@@ -122,6 +133,26 @@ def run_experiments(
 
         args = argparse.Namespace(**PARAMETERS)
 
+        # NOTE: This is for easy recording of metrics across train, dev, test sets for each relation
+        if relation['relation'] not in metrics:
+            metrics[relation['relation']] = {
+                'train': {
+                    'mrr': 0,
+                    'p10': 0,
+                    'p1': 0
+                },
+                'dev': {
+                    'mrr': 0,
+                    'p10': 0,
+                    'p1': 0
+                },
+                'test': {
+                    'mrr': 0,
+                    'p10': 0,
+                    'p1': 0
+                }
+            }
+
         # see if file exists
         try:
             data = load_file(args.dataset_filename)
@@ -133,10 +164,17 @@ def run_experiments(
         if model is None:
             [model_type_name] = args.models_names
             model = build_model_by_name(model_type_name, args)
-        # print('USE_CONTEXT: {}, SYNTH: {}'.format(args.use_context, args.synthetic))
-        Precision1 = run_evaluation(args, shuffle_data=False, model=model, use_context=args.use_context, synthetic=args.synthetic)
+        MRR, Precision, Precision1 = run_evaluation(args, shuffle_data=False, model=model, use_context=args.use_context, synthetic=args.synthetic)
         print("P@1 : {}".format(Precision1), flush=True)
         all_Precision1.append(Precision1)
+
+        # TODO: remove
+        pp_list.append((args.template, Precision1, Precision, MRR))
+
+        # NOTE: This is for easy recording of metrics across train, dev, test sets for each relation
+        metrics[relation['relation']][dataset_type]['mrr'] = round(MRR * 100.0, 2)
+        metrics[relation['relation']][dataset_type]['p10'] = round(Precision * 100.0, 2)
+        metrics[relation['relation']][dataset_type]['p1'] = round(Precision1 * 100.0, 2)
 
         results_file.write(
             "{},{}\n".format(relation["relation"], round(Precision1 * 100, 2))
@@ -164,14 +202,29 @@ def run_experiments(
             flush=True,
         )
 
+    # TODO: remove
+    # TODO: use P@10 and MRR if there's a tie
+    best_prompt, best_p1, _, _ = max(pp_list, key=itemgetter(1))
+    best_list = []
+    for p in pp_list:
+        if p[1] == best_p1:
+            best_list.append(p)
+
+    if len(best_list) == 1:
+        print('Only one max found')
+    else:
+        print('Multiple maxes found: {}'.format(best_list))
+        best_prompt, best_p1, _, _ = max(best_list, key=itemgetter(2))
+
+    print('Best prompt: {}, best P@1: {}'.format(best_prompt, best_p1))
+
     return mean_p1, all_Precision1
 
 
 def get_TREx_parameters(data_path_post, data_path_pre="data/"):
     relations = load_file("{}relations.jsonl".format(data_path_pre))
     # data_path_pre += "TREx/"
-    data_path_pre = "data/LMAT/TREx_602020"
-    # data_path_pre = "~/workspace/data/LMAT/TREx_602020"
+    data_path_pre = "data/LMAT/TREx"
     # data_path_post = "train.jsonl"
     # data_path_post = "val.jsonl"
     # data_path_post = "test.jsonl"
@@ -195,10 +248,15 @@ def get_GoogleRE_parameters():
     return relations, data_path_pre, data_path_post
 
 
-def get_ConceptNet_parameters(data_path_pre="data/"):
+def get_ConceptNet_parameters(data_path_post, data_path_pre="data/"):
+    """
     relations = [{"relation": "test"}]
     data_path_pre += "ConceptNet/"
     data_path_post = ".jsonl"
+    return relations, data_path_pre, data_path_post
+    """
+    relations = load_file("{}relations_concept.jsonl".format(data_path_pre))
+    data_path_pre = 'data/LMAT/ConceptNet'
     return relations, data_path_pre, data_path_post
 
 
@@ -209,10 +267,26 @@ def get_Squad_parameters(data_path_pre="data/"):
     return relations, data_path_pre, data_path_post
 
 
-def run_all_LMs(parameters):
+def run_all_LMs(parameters, metrics, dataset_type):
     for ip in LMs:
         print(ip["label"])
-        run_experiments(*parameters, input_param=ip)
+        run_experiments(*parameters, metrics, dataset_type, input_param=ip)
+
+def print_all_relation_metrics(metrics):
+    for relation in metrics:
+        rel_train = metrics[relation]['train']
+        rel_dev = metrics[relation]['dev']
+        rel_test = metrics[relation]['test']
+        print('{}: {} & {} & {} & {} & {} & {} & {} & {} & {}'.format(relation,
+                                                                    rel_train['mrr'],
+                                                                    rel_train['p10'],
+                                                                    rel_train['p1'],
+                                                                    rel_dev['mrr'],
+                                                                    rel_dev['p10'],
+                                                                    rel_dev['p1'],
+                                                                    rel_test['mrr'],
+                                                                    rel_test['p10'],
+                                                                    rel_test['p1']))
 
 
 if __name__ == "__main__":
@@ -221,22 +295,36 @@ if __name__ == "__main__":
     # run_all_LMs(parameters)
 
     # print("2. T-REx")
-    print('======================================== TRAIN ========================================')
+    metrics = {}
+    print(('='*40) + ' TRAIN ' + ('='*40))
     data_path_post = 'train.jsonl'
     parameters = get_TREx_parameters(data_path_post)
-    run_all_LMs(parameters)
-    print('======================================== DEV ========================================')
-    data_path_post = 'val.jsonl'
+    run_all_LMs(parameters, metrics, 'train')
+    print(('='*40) + ' DEV ' + ('='*40))
+    data_path_post = 'dev.jsonl'
     parameters = get_TREx_parameters(data_path_post)
-    run_all_LMs(parameters)
-    print('======================================== TEST ========================================')
+    run_all_LMs(parameters, metrics, 'dev')
+    print(('='*40) + ' TEST ' + ('='*40))
     data_path_post = 'test.jsonl'
     parameters = get_TREx_parameters(data_path_post)
-    run_all_LMs(parameters)
+    run_all_LMs(parameters, metrics, 'test')
 
     # print("3. ConceptNet")
-    # parameters = get_ConceptNet_parameters()
-    # run_all_LMs(parameters)
+    # metrics = {}
+    # print(('='*40) + ' TRAIN ' + ('='*40))
+    # data_path_post = 'train.jsonl'
+    # parameters = get_ConceptNet_parameters(data_path_post)
+    # run_all_LMs(parameters, metrics, 'train')
+    # print(('='*40) + ' DEV ' + ('='*40))
+    # data_path_post = 'dev.jsonl'
+    # parameters = get_ConceptNet_parameters(data_path_post)
+    # run_all_LMs(parameters, metrics, 'dev')
+    # print(('='*40) + ' TEST ' + ('='*40))
+    # data_path_post = 'test.jsonl'
+    # parameters = get_ConceptNet_parameters(data_path_post)
+    # run_all_LMs(parameters, metrics, 'test')
+    # print(('='*40) + ' METRICS ' + ('='*40))
+    # print_all_relation_metrics(metrics)
 
     # print("4. SQuAD")
     # parameters = get_Squad_parameters()
