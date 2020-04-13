@@ -114,7 +114,7 @@ def run_experiments(
             "max_sentence_length": 100,
             "threads": -1,
             "interactive": False,
-            "use_context": True,
+            "use_context": False,
             "synthetic": False
         }
 
@@ -270,14 +270,14 @@ if __name__ == "__main__":
 
     # print("2. T-REx")
     metrics = {}
-    # print(('='*40) + ' TRAIN ' + ('='*40))
-    # data_path_post = 'train.jsonl'
-    # parameters = get_TREx_parameters(data_path_post)
-    # run_all_LMs(parameters, metrics, 'train')
-    # print(('='*40) + ' DEV ' + ('='*40))
-    # data_path_post = 'dev.jsonl'
-    # parameters = get_TREx_parameters(data_path_post)
-    # run_all_LMs(parameters, metrics, 'dev')
+    print(('='*40) + ' TRAIN ' + ('='*40))
+    data_path_post = 'train.jsonl'
+    parameters = get_TREx_parameters(data_path_post)
+    run_all_LMs(parameters, metrics, 'train')
+    print(('='*40) + ' DEV ' + ('='*40))
+    data_path_post = 'dev.jsonl'
+    parameters = get_TREx_parameters(data_path_post)
+    run_all_LMs(parameters, metrics, 'dev')
     print(('='*40) + ' TEST ' + ('='*40))
     data_path_post = 'test.jsonl'
     parameters = get_TREx_parameters(data_path_post)
