@@ -88,9 +88,6 @@ def run_experiments(
 
     results_file = open("last_results.csv", "w+")
 
-    # TODO: remove
-    pp_list = []
-
     for relation in relations:
         pp.pprint(relation)
         PARAMETERS = {
@@ -98,13 +95,9 @@ def run_experiments(
             # "dataset_filename": "{}{}{}".format(
             #     data_path_pre, relation["relation"], data_path_post
             # ),
-            # # Google RE and TREx
-            # "dataset_filename": "{}/{}/{}".format(
-            #     data_path_pre, relation["relation"], data_path_post
-            # ),
-            # TEMP
-            "dataset_filename": "{}/{}/{}{}".format(
-                data_path_pre, relation["relation"], relation["relation"], data_path_post
+            # Google RE and TREx
+            "dataset_filename": "{}/{}/{}".format(
+                data_path_pre, relation["relation"], data_path_post
             ),
             "common_vocab_filename": "pre-trained_language_models/common_vocab_cased.txt",
             "template": "",
@@ -168,9 +161,6 @@ def run_experiments(
         print("P@1 : {}".format(Precision1), flush=True)
         all_Precision1.append(Precision1)
 
-        # TODO: remove
-        pp_list.append((args.template, Precision1, Precision, MRR))
-
         # NOTE: This is for easy recording of metrics across train, dev, test sets for each relation
         metrics[relation['relation']][dataset_type]['mrr'] = round(MRR * 100.0, 2)
         metrics[relation['relation']][dataset_type]['p10'] = round(Precision * 100.0, 2)
@@ -201,22 +191,6 @@ def run_experiments(
             len(type_count[t]),
             flush=True,
         )
-
-    # TODO: remove
-    # TODO: use P@10 and MRR if there's a tie
-    best_prompt, best_p1, _, _ = max(pp_list, key=itemgetter(1))
-    best_list = []
-    for p in pp_list:
-        if p[1] == best_p1:
-            best_list.append(p)
-
-    if len(best_list) == 1:
-        print('Only one max found')
-    else:
-        print('Multiple maxes found: {}'.format(best_list))
-        best_prompt, best_p1, _, _ = max(best_list, key=itemgetter(2))
-
-    print('Best prompt: {}, best P@1: {}'.format(best_prompt, best_p1))
 
     return mean_p1, all_Precision1
 
@@ -305,18 +279,20 @@ if __name__ == "__main__":
 
     # print("2. T-REx")
     metrics = {}
-    print(('='*40) + ' TRAIN ' + ('='*40))
-    data_path_post = 'train.jsonl'
-    parameters = get_TREx_parameters(data_path_post)
-    run_all_LMs(parameters, metrics, 'train')
-    print(('='*40) + ' DEV ' + ('='*40))
-    data_path_post = 'dev.jsonl'
-    parameters = get_TREx_parameters(data_path_post)
-    run_all_LMs(parameters, metrics, 'dev')
+    # print(('='*40) + ' TRAIN ' + ('='*40))
+    # data_path_post = 'train.jsonl'
+    # parameters = get_TREx_parameters(data_path_post)
+    # run_all_LMs(parameters, metrics, 'train')
+    # print(('='*40) + ' DEV ' + ('='*40))
+    # data_path_post = 'dev.jsonl'
+    # parameters = get_TREx_parameters(data_path_post)
+    # run_all_LMs(parameters, metrics, 'dev')
     print(('='*40) + ' TEST ' + ('='*40))
     data_path_post = 'test.jsonl'
     parameters = get_TREx_parameters(data_path_post)
     run_all_LMs(parameters, metrics, 'test')
+    print(('='*40) + ' METRICS ' + ('='*40))
+    print_all_relation_metrics(metrics)
 
     # print("3. ConceptNet")
     # metrics = {}
