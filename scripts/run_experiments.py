@@ -198,7 +198,7 @@ def run_experiments(
 def get_TREx_parameters(data_path_post, data_path_pre="data/"):
     relations = load_file("{}relations.jsonl".format(data_path_pre))
     # data_path_pre += "TREx/"
-    data_path_pre = "data/LMAT/TREx"
+    data_path_pre = "data/LMAT/TREx_all"
     # data_path_post = "train.jsonl"
     # data_path_post = "val.jsonl"
     # data_path_post = "test.jsonl"
