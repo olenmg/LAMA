@@ -102,7 +102,7 @@ def run_experiments(
             "common_vocab_filename": "pre-trained_language_models/common_vocab_cased.txt",
             "template": "",
             "bert_vocab_name": "vocab.txt",
-            "batch_size": 32,
+            "batch_size": 64,
             "logdir": "output",
             "full_logdir": "output/results/{}/{}".format(
                 input_param["label"], relation["relation"]
@@ -198,7 +198,7 @@ def run_experiments(
 def get_TREx_parameters(data_path_post, data_path_pre="data/"):
     relations = load_file("{}relations.jsonl".format(data_path_pre))
     # data_path_pre += "TREx/"
-    data_path_pre = "data/LMAT/TREx_all"
+    data_path_pre = "data/LMAT/TREx_all_D"
     # data_path_post = "train.jsonl"
     # data_path_post = "val.jsonl"
     # data_path_post = "test.jsonl"

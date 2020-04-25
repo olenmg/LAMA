@@ -386,7 +386,7 @@ def main(args, shuffle_data=True, model=None, use_context=False, synthetic=False
 
     data = load_file(args.dataset_filename)
 
-    print(len(data))
+    print('Number of samples in raw data:', len(data))
 
     if args.lowercase:
         # lowercase all samples
@@ -410,7 +410,7 @@ def main(args, shuffle_data=True, model=None, use_context=False, synthetic=False
 
     logger.info("\n" + ret_msg + "\n")
 
-    print(len(all_samples))
+    print('Number of samples after filtering:', len(all_samples))
 
     # if template is active (1) use a single example for (sub,obj) and (2) ...
     if args.template and args.template != "":
@@ -473,8 +473,8 @@ def main(args, shuffle_data=True, model=None, use_context=False, synthetic=False
             # Replace facts with synthetic facts
             facts = synth_facts
 
-        print('Number of facts:', len(facts))
-        local_msg = "distinct template facts: {}".format(len(facts))
+        # print('Number of facts:', len(facts))
+        local_msg = "Distinct template facts: {}".format(len(facts))
         logger.info("\n" + local_msg + "\n")
         print(local_msg)
         all_samples = []
@@ -608,7 +608,9 @@ def main(args, shuffle_data=True, model=None, use_context=False, synthetic=False
         #     run_thread(a)
 
         # multithread
+        # print('ARGUMENTS:', len(arguments))
         res = pool.map(run_thread, arguments)
+        # print('RES LEN:', len(res))
 
         if args.use_negated_probes:
             sentences_b_negated = sentences_batches_negated[i]
@@ -693,6 +695,19 @@ def main(args, shuffle_data=True, model=None, use_context=False, synthetic=False
                     Overlap += overlap
                     Spearman += spearman
                     num_valid_negation += 1.0
+                    
+            ############################################ MACRO-AVERAGED ACCURACY ############################################
+
+            probe_name = 'lama_D'
+            rel_name = os.path.basename(args.full_logdir)
+            dataset_type = os.path.basename(args.dataset_filename).replace('.jsonl', '')
+            rel_macro_filename = 'out/TREx/uncond/macro/{}/{}/{}.jsonl'.format(probe_name, rel_name, dataset_type)
+            # Make directories in path if they don't exist
+            os.makedirs(os.path.dirname(rel_macro_filename), exist_ok=True)
+            with open(rel_macro_filename, 'a+') as f_out:
+                f_out.write(json.dumps({'obj': sample['obj_label'], 'acc': element['sample_Precision1']}) + '\n')
+
+            #################################################################################################################
 
             MRR += sample_MRR
             Precision += sample_P
