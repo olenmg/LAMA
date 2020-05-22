@@ -257,7 +257,9 @@ def filter_samples(model, samples, vocab_subset, max_sentence_length, template):
     return new_samples, msg
 
 
-def main(args, shuffle_data=True, model=None, use_context=False, synthetic=False):
+def main(args, shuffle_data=True, model=None, use_ctx=False, synthetic=False):
+    # Set random seed so randomly picking context sentences is consistent across runs
+    random.seed(0)
 
     if len(args.models_names) > 1:
         raise ValueError('Please specify a single language model (e.g., --lm "bert").')
@@ -357,34 +359,29 @@ def main(args, shuffle_data=True, model=None, use_context=False, synthetic=False
             sub = sample["sub_label"]
             obj = sample["obj_label"]
             
-            if (sub, obj) not in facts:
-                if use_context:
-                    evidences = sample['evidences']
-                    # To make the number of samples used between open-book and closed-book probe
-                    # settings, we need to only consider facts that include context sentences
-                    valid_contexts = []
-                    # For each evidence, replace [MASK] in the masked sentence with obj_surface. But the actual answer/object should be obj_label
-                    for evidence in evidences:
-                        ctx = evidence['masked_sentence']
-                        obj_surface = evidence['obj_surface']
-                        # Only consider context samples where object surface == true object label, and grab the first one
-                        if obj_surface == obj:
-                            valid_contexts.append(ctx)
-                    # Randomly pick a context sentence that has obj_surface equal to the obj_label
-                    if not valid_contexts:
-                        # print('Invalid fact with no context - sub: {}, obj: {}'.format(sub, obj))
-                        num_invalid_facts += 1
-                    else:
-                        context = random.choice(valid_contexts)
-                        context_words = context.split()
-                        if len(context_words) > MAX_CONTEXT_LEN:
-                            # If context is too long, use the first X tokens (it's ok if obj isn't included)
-                            context = ' '.join(context_words[:MAX_CONTEXT_LEN])
-                            print('Sample context too long ({}), truncating.'.format(len(context_words)))
-                        context = context.replace(base.MASK, obj_surface)
-                        facts.append((sub, obj, context))
-                else:
-                    facts.append((sub, obj))
+            ################################################### CONTEXT ###################################################
+            if use_ctx:
+                if 'evidences' not in sample:
+                    num_invalid_facts += 1
+                    continue
+
+                evidences = sample['evidences']
+                # Randomly pick a context sentence
+                ctx_sents = [(evidence['obj_surface'], evidence['masked_sentence']) for evidence in evidences]
+                ctx_pair = random.choice(ctx_sents)
+                obj_surface, context = ctx_pair
+                context_words = context.split()
+                if len(context_words) > MAX_CONTEXT_LEN:
+                    # If context is too long, use the first X tokens (it's ok if obj isn't included)
+                    context = ' '.join(context_words[:MAX_CONTEXT_LEN])
+                    # print('Sample context too long ({}), truncating.'.format(len(context_words)))
+
+                # If truncated context sentence still has MASK, we need to replace it with object surface but if it left out MASK, it's fine
+                context = context.replace(base.MASK, obj_surface)
+                facts.append((sub, obj, context))
+            else:
+                facts.append((sub, obj))
+            ###############################################################################################################
 
         # print('Total facts before:', len(all_samples))
         # print('Invalid facts:', num_invalid_facts)
@@ -416,7 +413,7 @@ def main(args, shuffle_data=True, model=None, use_context=False, synthetic=False
         print(local_msg)
         all_samples = []
         for fact in facts:
-            if use_context:
+            if use_ctx:
                 (sub, obj, context) = fact
                 # print('Sub: {}, Obj: {}, Ctx: {}'.format(sub, obj, context))
                 sample = {}
@@ -567,10 +564,10 @@ def main(args, shuffle_data=True, model=None, use_context=False, synthetic=False
 
             ############################################ MACRO-AVERAGED ACCURACY ############################################
 
-            probe_name = 'lama_D'
+            probe_name = 'lama_R_bench'
             rel_name = os.path.basename(args.full_logdir)
             dataset_type = os.path.basename(args.dataset_filename).replace('.jsonl', '')
-            rel_macro_filename = 'out/TREx/uncond/macro/{}/{}/{}.jsonl'.format(probe_name, rel_name, dataset_type)
+            rel_macro_filename = 'out/TREx/cond/macro/{}/{}/{}.jsonl'.format(probe_name, rel_name, dataset_type)
             # Make directories in path if they don't exist
             os.makedirs(os.path.dirname(rel_macro_filename), exist_ok=True)
             with open(rel_macro_filename, 'a+') as f_out:

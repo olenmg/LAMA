@@ -35,6 +35,8 @@ def __print_generation(positional_scores, token_ids, vocab, rank_dict,
         print(msg)
     msg += '\n'
 
+    pred_obj = ''
+
     for idx, tok in enumerate(token_ids):
 
         word_form = vocab[tok]
@@ -56,6 +58,9 @@ def __print_generation(positional_scores, token_ids, vocab, rank_dict,
             rank
         )
 
+        if str(word_form) == '[MASK]':
+            pred_obj = vocab[predicted_token_id]
+
         if print_on_console:
             if masked_indices is not None and idx in masked_indices:
                 print(colored(string_to_print, 'grey', 'on_yellow'))
@@ -65,7 +70,7 @@ def __print_generation(positional_scores, token_ids, vocab, rank_dict,
                 print(string_to_print)
         msg += string_to_print + "\n"
 
-    return msg
+    return msg, pred_obj
 
 
 def __get_topk(log_probs, topk):
@@ -122,17 +127,17 @@ def print_sentence_predictions(log_probs, token_ids, vocab,
     # print("positional_scores: {}".format(positional_scores))
     # print("avg_nll_loss: {}".format(avg_nll_loss))
 
-    __print_generation(positional_scores, token_ids, vocab, rank_dict,
+    return_msg, pred_obj = __print_generation(positional_scores, token_ids, vocab, rank_dict,
                        index_max_probs, value_max_probs, topk,
                        excluded_indices, masked_indices, print_generation)
 
-    # msg += return_msg
+    msg += return_msg
     msg += '| Perplexity: {:.3f}\n'.format(perplexity)
 
     if print_generation:
         print("\n"+msg+"\n")
 
-    return perplexity, msg
+    return perplexity, msg, pred_obj
 
 
 def load_vocab(vocab_filename):
