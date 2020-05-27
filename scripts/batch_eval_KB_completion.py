@@ -24,7 +24,7 @@ import lama.evaluation_metrics as metrics
 import time, sys
 import random
 
-MAX_CONTEXT_LEN = 100
+MAX_CONTEXT_LEN = 50
 
 def load_file(filename):
     data = []
@@ -51,6 +51,7 @@ def create_logdir_with_timestamp(base_logdir, modelname):
 
 
 def parse_template(template, subject_label, object_label, context):
+    # TODO: add space in front of subject for RoBERTa
     SUBJ_SYMBOL = "[X]"
     OBJ_SYMBOL = "[Y]"
     template = template.replace(SUBJ_SYMBOL, subject_label)
@@ -240,6 +241,10 @@ def filter_samples(model, samples, vocab_subset, max_sentence_length, template):
         if "obj_label" in sample and "sub_label" in sample:
 
             obj_label_ids = model.get_id(sample["obj_label"])
+            
+            if len(obj_label_ids.numpy()) > 1:
+                samples_exluded += 1
+                break
 
             if obj_label_ids:
                 recostructed_word = " ".join(
@@ -311,7 +316,7 @@ def filter_samples(model, samples, vocab_subset, max_sentence_length, template):
     return new_samples, msg
 
 
-def main(args, shuffle_data=True, model=None, use_ctx=False, synthetic=False):
+def main(args, rel_id, shuffle_data=True, model=None, use_ctx=False, synthetic=False):
     # Set random seed so randomly picking context sentences is consistent across runs
     random.seed(0)
 
@@ -414,6 +419,19 @@ def main(args, shuffle_data=True, model=None, use_ctx=False, synthetic=False):
 
     print('Number of samples after filtering:', len(all_samples))
 
+    
+    # GET BLACKLIST
+    re_blacklist = set()
+    blacklist_filepath = os.path.join('data/LMAT/TREx_bench_cond_RE_blacklist/', rel_id + '.jsonl')
+    with open(blacklist_filepath, 'r') as f:
+        lines = f.readlines()
+        for line in lines:
+            sample = json.loads(line)
+            sub_uri = sample['sub_uri']
+            obj_uri = sample['obj_uri']
+            re_blacklist.add((sub_uri, obj_uri))
+    
+
     # if template is active (1) use a single example for (sub,obj) and (2) ...
     if args.template and args.template != "":
         facts = []
@@ -421,6 +439,8 @@ def main(args, shuffle_data=True, model=None, use_ctx=False, synthetic=False):
         for sample in all_samples:
             sub = sample["sub_label"]
             obj = sample["obj_label"]
+            sub_uri = sample['sub_uri']
+            obj_uri = sample['obj_uri']
             
             ################################################### CONTEXT ###################################################
             if use_ctx:
@@ -443,12 +463,14 @@ def main(args, shuffle_data=True, model=None, use_ctx=False, synthetic=False):
                 context = context.replace(base.MASK, obj_surface)
                 facts.append((sub, obj, context))
             else:
-                facts.append((sub, obj))
+                # Skip facts that we also skip in RE
+                if (sub_uri, obj_uri) not in re_blacklist:
+                    facts.append((sub, obj))
             ###############################################################################################################
 
-        # print('Total facts before:', len(all_samples))
-        # print('Invalid facts:', num_invalid_facts)
-        # print('Total facts after:', len(facts))
+        print('Total facts before:', len(all_samples))
+        print('Invalid facts:', num_invalid_facts)
+        print('Total facts after:', len(facts))
 
         if synthetic:
             # Gather all UNIQUE objects
@@ -695,14 +717,14 @@ def main(args, shuffle_data=True, model=None, use_ctx=False, synthetic=False):
                     
             ############################################ MACRO-AVERAGED ACCURACY ############################################
 
-            probe_name = 'lama_R_bench'
-            rel_name = os.path.basename(args.full_logdir)
-            dataset_type = os.path.basename(args.dataset_filename).replace('.jsonl', '')
-            rel_macro_filename = 'out/TREx/cond/macro/{}/{}/{}.jsonl'.format(probe_name, rel_name, dataset_type)
-            # Make directories in path if they don't exist
-            os.makedirs(os.path.dirname(rel_macro_filename), exist_ok=True)
-            with open(rel_macro_filename, 'a+') as f_out:
-                f_out.write(json.dumps({'obj': sample['obj_label'], 'acc': element['sample_Precision1']}) + '\n')
+            # probe_name = 'lama_R_bench'
+            # rel_name = os.path.basename(args.full_logdir)
+            # dataset_type = os.path.basename(args.dataset_filename).replace('.jsonl', '')
+            # rel_macro_filename = 'out/TREx/cond/macro/{}/{}/{}.jsonl'.format(probe_name, rel_name, dataset_type)
+            # # Make directories in path if they don't exist
+            # os.makedirs(os.path.dirname(rel_macro_filename), exist_ok=True)
+            # with open(rel_macro_filename, 'a+') as f_out:
+            #     f_out.write(json.dumps({'obj': sample['obj_label'], 'acc': element['sample_Precision1']}) + '\n')
 
             #################################################################################################################
 
