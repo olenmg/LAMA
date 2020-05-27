@@ -19,17 +19,13 @@ from operator import itemgetter
 import random
 
 LMs = [
-    {
-        "lm":
-        "bert",
-        "label":
-        "bert_base",
-        "models_names": ["bert"],
-        "bert_model_name":
-        "bert-base-cased",
-        "bert_model_dir":
-        "pre-trained_language_models/bert/cased_L-12_H-768_A-12"
-    },
+    # {
+    #     "lm": "bert",
+    #     "label": "bert_base",
+    #     "models_names": ["bert"],
+    #     "bert_model_name": "bert-base-cased",
+    #     "bert_model_dir": "pre-trained_language_models/bert/cased_L-12_H-768_A-12"
+    # },
     # {
     #     "lm": "bert",
     #     "label": "bert_large",
@@ -37,7 +33,24 @@ LMs = [
     #     "bert_model_name": "bert-large-cased",
     #     "bert_model_dir": "pre-trained_language_models/bert/cased_L-24_H-1024_A-16",
     # }
+    {
+        "lm": "roberta",
+        "label": "roberta_base",
+        "models_names": ["roberta"],
+        "roberta_model_name": "model.pt",
+        "roberta_model_dir": "pre-trained_language_models/roberta/roberta.base",
+        "roberta_vocab_name": "dict.txt"
+    }
 ]
+
+LM_ROBERTA_BASE = {
+    "lm": "roberta",
+    "label": "roberta_base",
+    "models_names": ["roberta"],
+    "roberta_model_name": "model.pt",
+    "roberta_model_dir": "pre-trained_language_models/roberta/roberta.base",
+    "roberta_vocab_name": "dict.txt"
+}
 
 def run_experiments(
     relations,
@@ -72,16 +85,16 @@ def run_experiments(
             "common_vocab_filename": "pre-trained_language_models/common_vocab_cased.txt",
             "template": "",
             "bert_vocab_name": "vocab.txt",
-            "batch_size": 32, # NOTE: 64 for UNCONDITIONAL and 32 for CONDITIONAL
+            "batch_size": 64, # NOTE: 64 for UNCONDITIONAL and 32 for CONDITIONAL
             "logdir": "output",
             "full_logdir": "output/results/{}/{}".format(
                 input_param["label"], relation["relation"]
             ),
             "lowercase": False,
-            "max_sentence_length": 100,
+            "max_sentence_length": 50,
             "threads": -1,
             "interactive": False,
-            "use_ctx": True,
+            "use_ctx": False,
             "synthetic": False
         }
 
@@ -124,7 +137,7 @@ def run_experiments(
         if model is None:
             [model_type_name] = args.models_names
             model = build_model_by_name(model_type_name, args)
-        MRR, Precision, Precision1 = run_evaluation(args, shuffle_data=False, model=model, use_ctx=args.use_ctx, synthetic=args.synthetic)
+        MRR, Precision, Precision1 = run_evaluation(args, relation['relation'], shuffle_data=False, model=model, use_ctx=args.use_ctx, synthetic=args.synthetic)
         print("P@1 : {}".format(Precision1), flush=True)
         all_Precision1.append(Precision1)
 
@@ -165,7 +178,7 @@ def run_experiments(
 def get_TREx_parameters(data_path_post, data_path_pre="data/"):
     relations = load_file("{}relations.jsonl".format(data_path_pre))
     # data_path_pre += "TREx/"
-    data_path_pre = "data/LMAT/TREx_R_bench_cond"
+    data_path_pre = "data/LMAT/TREx_R_bench_uncond"
     # data_path_post = "train.jsonl"
     # data_path_post = "val.jsonl"
     # data_path_post = "test.jsonl"

@@ -109,10 +109,10 @@ class Base_Connector():
                 new_vocab_subset.append(word)
             else:
                 msg = "word {} from vocab_subset not in model vocabulary!".format(word)
-                if logger is not None:
-                    logger.warning(msg)
-                else:
-                    print("WARNING: {}".format(msg))
+                # if logger is not None:
+                #     logger.warning(msg)
+                # else:
+                #     print("WARNING: {}".format(msg))
 
         # 1. gather correct indices
         indices = torch.as_tensor(index_list)
