@@ -23,8 +23,8 @@ import multiprocessing
 import lama.evaluation_metrics as metrics
 import time, sys
 import random
+from collections import defaultdict
 
-MAX_CONTEXT_LEN = 50
 
 def load_file(filename):
     data = []
@@ -51,7 +51,6 @@ def create_logdir_with_timestamp(base_logdir, modelname):
 
 
 def parse_template(template, subject_label, object_label, context):
-    # TODO: add space in front of subject for RoBERTa
     SUBJ_SYMBOL = "[X]"
     OBJ_SYMBOL = "[Y]"
     template = template.replace(SUBJ_SYMBOL, subject_label)
@@ -242,14 +241,15 @@ def filter_samples(model, samples, vocab_subset, max_sentence_length, template):
 
             obj_label_ids = model.get_id(sample["obj_label"])
             
-            if len(obj_label_ids.numpy()) > 1:
-                samples_exluded += 1
-                break
+            # if len(obj_label_ids) > 1:
+            #     samples_exluded += 1
+            #     break
 
             if obj_label_ids:
                 recostructed_word = " ".join(
                     [model.vocab[x] for x in obj_label_ids]
                 ).strip()
+                # print(obj_label_ids, recostructed_word)
             else:
                 recostructed_word = None
 
@@ -419,75 +419,88 @@ def main(args, rel_id, shuffle_data=True, model=None, use_ctx=False, synthetic=F
 
     print('Number of samples after filtering:', len(all_samples))
 
-    
-    # GET BLACKLIST
-    re_blacklist = set()
-    blacklist_filepath = os.path.join('data/LMAT/TREx_bench_cond_RE_blacklist/', rel_id + '.jsonl')
-    with open(blacklist_filepath, 'r') as f:
-        lines = f.readlines()
-        for line in lines:
-            sample = json.loads(line)
-            sub_uri = sample['sub_uri']
-            obj_uri = sample['obj_uri']
-            re_blacklist.add((sub_uri, obj_uri))
-    
-
     # if template is active (1) use a single example for (sub,obj) and (2) ...
     if args.template and args.template != "":
         facts = []
         num_invalid_facts = 0
+        num_long_sents = 0
+        num_dup_sents = 0
         for sample in all_samples:
-            sub = sample["sub_label"]
-            obj = sample["obj_label"]
+            sub_label = sample["sub_label"]
+            obj_label = sample["obj_label"]
             sub_uri = sample['sub_uri']
             obj_uri = sample['obj_uri']
             
-            ################################################### CONTEXT ###################################################
+            ################################################### CONDITIONAL PROBING ###################################################
             if use_ctx:
                 if 'evidences' not in sample:
                     num_invalid_facts += 1
                     continue
 
+                # Go through ALL context sentences
+                evidence_set = set()
                 evidences = sample['evidences']
+                for evidence in evidences:
+                    sub_surface = evidence['sub_surface']
+                    obj_surface = evidence['obj_surface']
+                    masked_sent = evidence['masked_sentence']
+
+                    # There are duplicate context sentences for some facts...
+                    if (sub_surface, obj_surface, masked_sent) in evidence_set:
+                        num_dup_sents += 1
+                        continue
+                    evidence_set.add((sub_surface, obj_surface, masked_sent))
+
+                    # Skip sentences that exceed max sentence length
+                    if len(masked_sent.split()) > args.max_sentence_length:
+                        num_long_sents += 1
+                        continue
+
+                    # Fill in MASK with object (surface form)
+                    context = masked_sent.replace(base.MASK, obj_surface)
+                    facts.append((sub_label, obj_label, obj_surface, context))
+
+                """
                 # Randomly pick a context sentence
+                evidences = sample['evidences']
                 ctx_sents = [(evidence['obj_surface'], evidence['masked_sentence']) for evidence in evidences]
                 ctx_pair = random.choice(ctx_sents)
                 obj_surface, context = ctx_pair
                 context_words = context.split()
                 if len(context_words) > MAX_CONTEXT_LEN:
-                    # If context is too long, use the first X tokens (it's ok if obj isn't included)
+                    # If context is too long, use the first X tokens (it's ok if obj_label isn't included)
                     context = ' '.join(context_words[:MAX_CONTEXT_LEN])
                     # print('Sample context too long ({}), truncating.'.format(len(context_words)))
 
                 # If truncated context sentence still has MASK, we need to replace it with object surface but if it left out MASK, it's fine
                 context = context.replace(base.MASK, obj_surface)
-                facts.append((sub, obj, context))
+                facts.append((sub_label, obj_label, context))
+                """
             else:
-                # Skip facts that we also skip in RE
-                if (sub_uri, obj_uri) not in re_blacklist:
-                    facts.append((sub, obj))
-            ###############################################################################################################
+                facts.append((sub_label, obj_label))
+            ###########################################################################################################################
 
         print('Total facts before:', len(all_samples))
         print('Invalid facts:', num_invalid_facts)
+        print('Number of masked sentences that are too long:', num_long_sents)
+        print('Number of duplicate sentences:', num_dup_sents)
         print('Total facts after:', len(facts))
 
         if synthetic:
-            # Gather all UNIQUE objects
-            unique_objs = []
+            # Gather all UNIQUE objects and their surface forms
+            unique_objs_dict = defaultdict(list)
             for fact in facts:
-                (sub, obj, ctx) = fact
-                unique_objs.append(obj)
-            unique_objs = set(unique_objs)
-            # print('UNIQUE OBJECTS:', unique_objs)
+                (sub_label, obj_label, obj_surface, ctx) = fact
+                unique_objs_dict[obj_label].append(obj_surface)
 
             # Iterate through each fact and assign it a different UNIQUE object and replace the current obj in context
             synth_facts = []
             for fact in facts:
-                (sub, obj, ctx) = fact
-                synth_obj = random.choice([x for x in unique_objs if x != obj])
-                synth_ctx = ctx.replace(obj, synth_obj)
-                synth_facts.append((sub, synth_obj, synth_ctx))
+                (sub_label, obj_label, obj_surface, ctx) = fact
+                synth_obj_label = random.choice([x for x in unique_objs_dict.keys() if x != obj_label])
+                synth_obj_surface = random.choice(unique_objs_dict[synth_obj_label])
+                synth_ctx = ctx.replace(obj_surface, synth_obj_surface)
+                synth_facts.append((sub_label, synth_obj_label, synth_obj_surface, synth_ctx))
 
             # Replace facts with synthetic facts
             facts = synth_facts
@@ -499,21 +512,21 @@ def main(args, rel_id, shuffle_data=True, model=None, use_ctx=False, synthetic=F
         all_samples = []
         for fact in facts:
             if use_ctx:
-                (sub, obj, context) = fact
-                # print('Sub: {}, Obj: {}, Ctx: {}'.format(sub, obj, context))
+                (sub_label, obj_label, obj_surface, context) = fact
                 sample = {}
-                sample['sub_label'] = sub
-                sample['obj_label'] = obj
+                sample['sub_label'] = sub_label
+                sample['obj_label'] = obj_label
+                sample['obj_surface'] = obj_surface
                 sample['context'] = context
                 sample["masked_sentences"] = parse_template(
                     args.template.strip(), sample["sub_label"].strip(), base.MASK, context
                 )
                 all_samples.append(sample)
             else:
-                (sub, obj) = fact
+                (sub_label, obj_label) = fact
                 sample = {}
-                sample["sub_label"] = sub
-                sample["obj_label"] = obj
+                sample["sub_label"] = sub_label
+                sample["obj_label"] = obj_label
                 # sobstitute all sentences with a standard template
                 sample["masked_sentences"] = parse_template(
                     args.template.strip(), sample["sub_label"].strip(), base.MASK, None
@@ -555,6 +568,9 @@ def main(args, rel_id, shuffle_data=True, model=None, use_ctx=False, synthetic=F
         num_threads = multiprocessing.cpu_count()
     pool = ThreadPool(num_threads)
     list_of_results = []
+    num_results = 0
+    # Keep track of each fact and its points
+    fact_map = defaultdict(list)
 
     for i in tqdm(range(len(samples_batches))):
 
@@ -696,7 +712,7 @@ def main(args, rel_id, shuffle_data=True, model=None, use_ctx=False, synthetic=F
 
             # print()
             # print("idx: {}".format(idx))
-            # print("masked_entity: {}".format(result_masked_topk['masked_entity']))
+            # # print("masked_entity: {}".format(result_masked_topk['masked_entity']))
             # for yi in range(10):
             #     print("\t{} {}".format(yi,result_masked_topk['topk'][yi]))
             # print("masked_indices_list: {}".format(masked_indices_list[idx]))
@@ -704,6 +720,15 @@ def main(args, rel_id, shuffle_data=True, model=None, use_ctx=False, synthetic=F
             # print("sample_P: {}".format(sample_P))
             # print("sample: {}".format(sample))
             # print()
+
+            if use_ctx:
+                # More like fact tuple
+                rel_pair = (sample['sub_label'], sample['obj_label'])
+                # Give model a point if it's prediction is the same as the canonical form of the object
+                fact_map[rel_pair].append(int(element["sample_Precision1"]))
+                # Also give model a point if it's predictiction equals the surface form of the object
+                top_pred_token = result_masked_topk['topk'][0]['token_word_form']
+                fact_map[rel_pair].append(int(top_pred_token.lower() == sample['obj_surface'].lower()))
 
             if args.use_negated_probes:
                 overlap, spearman, msg = res_negated[idx]
@@ -716,16 +741,18 @@ def main(args, rel_id, shuffle_data=True, model=None, use_ctx=False, synthetic=F
                     num_valid_negation += 1.0
                     
             ############################################ MACRO-AVERAGED ACCURACY ############################################
-
-            # probe_name = 'lama_R_bench'
-            # rel_name = os.path.basename(args.full_logdir)
-            # dataset_type = os.path.basename(args.dataset_filename).replace('.jsonl', '')
-            # rel_macro_filename = 'out/TREx/cond/macro/{}/{}/{}.jsonl'.format(probe_name, rel_name, dataset_type)
-            # # Make directories in path if they don't exist
-            # os.makedirs(os.path.dirname(rel_macro_filename), exist_ok=True)
-            # with open(rel_macro_filename, 'a+') as f_out:
-            #     f_out.write(json.dumps({'obj': sample['obj_label'], 'acc': element['sample_Precision1']}) + '\n')
-
+            """
+            probe_type = 'uncond'
+            model_name = 'bert'
+            experiment_name = 'rand_X5Y_cand10_custom'
+            rel_name = os.path.basename(args.full_logdir)
+            dataset_type = os.path.basename(args.dataset_filename).replace('.jsonl', '')
+            rel_macro_filename = 'out/{}/{}/macro/{}/{}/{}.jsonl'.format(probe_type, model_name, experiment_name, rel_name, dataset_type)
+            # Make directories in path if they don't exist
+            os.makedirs(os.path.dirname(rel_macro_filename), exist_ok=True)
+            with open(rel_macro_filename, 'a+') as f_out:
+                f_out.write(json.dumps({'obj': sample['obj_label'], 'acc': element['sample_Precision1']}) + '\n')
+            """
             #################################################################################################################
 
             MRR += sample_MRR
@@ -755,24 +782,40 @@ def main(args, rel_id, shuffle_data=True, model=None, use_ctx=False, synthetic=F
                     MRR_positive += sample_MRR
                     Precision_positivie += sample_P
 
-            list_of_results.append(element)
+            # print('ELEMENT:', element)
+            # list_of_results.append(element)
+            num_results += 1
 
     pool.close()
     pool.join()
 
+    # For CONDITIONAL probing, make evaluation fair with RE baseline by giving the model a point if it returns the correct object for ANY masked sentence of a fact
+    # print('FACT MAP:', fact_map)
+    Precision1_RE = 0
+    if use_ctx:
+        Precision1_RE_sum = 0
+        for key, val in fact_map.items():
+            score = 1 if any(x == 1 for x in val) else 0
+            Precision1_RE_sum += score
+        Precision1_RE = Precision1_RE_sum / len(fact_map)
+
     # stats
     # Mean reciprocal rank
-    MRR /= len(list_of_results)
+    MRR /= num_results
 
     # Precision
-    Precision /= len(list_of_results)
-    Precision1 /= len(list_of_results)
+    Precision /= num_results
+    Precision1 /= num_results
 
     msg = "all_samples: {}\n".format(len(all_samples))
-    msg += "list_of_results: {}\n".format(len(list_of_results))
+    msg += "list_of_results: {}\n".format(num_results)
     msg += "global MRR: {}\n".format(MRR)
     msg += "global Precision at 10: {}\n".format(Precision)
     msg += "global Precision at 1: {}\n".format(Precision1)
+    if use_ctx:
+        msg += "total num facts: {}\n".format(len(fact_map))
+        msg += "num facts correct: {}\n".format(Precision1_RE_sum)
+        msg += "Precision at 1 (RE): {}\n".format(Precision1_RE)
 
     if args.use_negated_probes:
         Overlap /= num_valid_negation
@@ -811,7 +854,7 @@ def main(args, rel_id, shuffle_data=True, model=None, use_ctx=False, synthetic=F
     # with open("{}/result.pkl".format(log_directory), "wb") as f:
     #     pickle.dump(all_results, f)
 
-    return MRR, Precision, Precision1
+    return MRR, Precision, Precision1, Precision1_RE
 
 
 if __name__ == "__main__":

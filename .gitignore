@@ -64,14 +64,19 @@ target/
 # Mac os x stuff
 .DS_Store
 
-pre-trained_language_models/
+pre-trained_language_models/*
+!pre-trained_language_models/common_vocab_cased_RoB.txt
+!pre-trained_language_models/common_vocab_cased.txt
 src/
 .idea
 */.mypy_cache
 LAMA-Internal/
-data/
 last_results.csv
 output/
+data/*
+!data/relations.jsonl
+!data/relations_original.jsonl
+
 
 last_*
 .nfs*
