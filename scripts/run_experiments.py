@@ -59,6 +59,8 @@ def run_experiments(
     type_Precision1 = defaultdict(list)
     type_count = defaultdict(list)
 
+    all_MRR = []
+    all_Precision = []
     all_Precision1_RE = []
 
     results_file = open("last_results.csv", "w+")
@@ -73,7 +75,7 @@ def run_experiments(
             "common_vocab_filename": "pre-trained_language_models/common_vocab_cased_RoB.txt", # NOTE: BERT + RoBERTa -> common_vocab_cased_RoB.txt
             "template": "",
             "bert_vocab_name": "vocab.txt",
-            "batch_size": 48, # NOTE: 64 for UNCONDITIONAL and 32 for CONDITIONAL
+            "batch_size": 64, # NOTE: 64 for UNCONDITIONAL and 48/32 for CONDITIONAL
             "logdir": "output",
             "full_logdir": "output/results/{}/{}".format(
                 input_param["label"], relation["relation"]
@@ -83,7 +85,7 @@ def run_experiments(
             "threads": -1, # NOTE: Tesla M60 (Azure) has 6 CPUs
             "interactive": False,
             "use_negated_probes": use_negated_probes,
-            "use_ctx": True, # NOTE: Toggle for conditional probing
+            "use_ctx": False, # NOTE: Toggle for conditional probing
             "synthetic": False # NOTE: Toggle for synthetic objects 
         }
 
@@ -130,6 +132,8 @@ def run_experiments(
             model = build_model_by_name(model_type_name, args)
         MRR, Precision, Precision1, Precision1_RE = run_evaluation(args, relation['relation'], shuffle_data=False, model=model, use_ctx=args.use_ctx, synthetic=args.synthetic)
         print("P@1 : {}".format(Precision1), flush=True)
+        all_MRR.append(MRR)
+        all_Precision.append(Precision)
         all_Precision1.append(Precision1)
         all_Precision1_RE.append(Precision1_RE)
 
@@ -170,6 +174,11 @@ def run_experiments(
     if args.use_ctx:
         mean_p1_re = np.mean(all_Precision1_RE)
         print("MEAN P@1 RE: {}".format(mean_p1_re))
+    else:
+        mean_mrr = np.mean(all_MRR)
+        print('MEAN MRR: {}'.format(mean_mrr))
+        mean_p10 = np.mean(all_Precision)
+        print('MEAN P@10: {}'.format(mean_p10))
 
     return mean_p1, all_Precision1
 
@@ -178,7 +187,7 @@ def get_TREx_parameters(data_path_post, data_path_pre="data/"):
     relations = load_file("{}relations.jsonl".format(data_path_pre))
     # data_path_pre += "TREx/"
     ############################################ CONFIGURABLE ############################################
-    data_path_pre = "data/LMAT/TREx_RoB_cond"
+    data_path_pre = "data/LMAT/TREx_RoB_uncond"
     ######################################################################################################
     # data_path_post = "train.jsonl"
     # data_path_post = "val.jsonl"
