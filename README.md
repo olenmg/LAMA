@@ -1,106 +1,272 @@
-# AutoPrompt
-An automated method based on gradient-guided search to create prompts for a diverse set of NLP tasks. AutoPrompt demonstrates that masked language models (MLMs) have an innate ability to perform sentiment analysis, natural language inference, fact retrieval, and relation extraction. Check out our [website](https://ucinlp.github.io/autoprompt/) for the paper and more information.
+# LAMA: LAnguage Model Analysis
+<img align="middle" src="img/logo.png" height="256" alt="LAMA">
 
-## Setup
+LAMA is a probe for analyzing the factual and commonsense knowledge contained in pretrained language models. <br>
+#### The dataset for the LAMA probe is available at https://dl.fbaipublicfiles.com/LAMA/data.zip <br>
+LAMA contains a set of connectors to pretrained language models. <br>
+LAMA exposes a transparent and unique interface to use:
 
-### 1. Create conda environment
-```
-conda create -n autoprompt -y python=3.7 && conda activate autoprompt
+- Transformer-XL (Dai et al., 2019)
+- BERT (Devlin et al., 2018)
+- ELMo (Peters et al., 2018)
+- GPT (Radford et al., 2018)
+- RoBERTa (Liu et al., 2019)
+
+Actually, LAMA is also a beautiful animal.
+
+## Reference:
+
+The LAMA probe is described in the following paper:
+
+```bibtex
+@inproceedings{petroni2019language,
+  title={Language Models as Knowledge Bases?},
+  author={F. Petroni, T. Rockt{\"{a}}schel, A. H. Miller, P. Lewis, A. Bakhtin, Y. Wu and S. Riedel},
+  booktitle={In: Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing (EMNLP), 2019},
+  year={2019}
+}
 ```
 
-### 2. Install dependecies
-Install the required packages
+## The LAMA probe
+
+To reproduce our results:
+
+### 1. Create conda environment and install requirements
+
+(optional) It might be a good idea to use a separate conda environment. It can be created by running:
 ```
+conda create -n lama37 -y python=3.7 && conda activate lama37
 pip install -r requirements.txt
 ```
-Also download the spacy model
-```
-python -m spacy download en
-```
 
-### 3. Get the data
-The datasets for sentiment analysis, NLI, fact retrieval, and relation extraction are available to download [here](https://drive.google.com/drive/folders/1vVhgnSXmbuJb6GLPn_FErY1xDTh1xyv-?usp=sharing)
+### 2. Download the data
 
-## Generating Prompts
-
-### Quick Overview of Templates
-A prompt is constructed by mapping things like the original input and trigger tokens to a template that looks something like
-
-`[CLS] {sub_label} [T] [T] [T] [P]. [SEP]`
-
-The example above is a template for generating fact retrieval prompts with 3 trigger tokens where `{sub_label}` is a placeholder for the subject in any (subject, relation, object) triplet in fact retrieval. `[P]` denotes the placement of a special `[MASK]` token that will be used to "fill-in-the-blank" by the language model. Each trigger token in the set of trigger tokens that are shared across all prompts is denoted by `[T]`.
-
-Depending on the language model (i.e. BERT or RoBERTa) you choose to generate prompts, the special tokens will be different. For BERT, stick `[CLS]` and `[SEP]` to each end of the template. For RoBERTa, use `<s>` and `</s>` instead.
-
-### Fact Retrieval
-```
-python -m lmat.create_trigger \
-    --train $path/train.jsonl \
-    --dev $path/dev.jsonl \
-    --template '<s> {sub_label} [T] [T] [T] [P] . </s>' \
-    --num_cand 10 \
-    --accumulation-steps 1 \
-    --model-name roberta-base \
-    --bsz 12 \
-    --eval-size 12 \
-    --iters 10 \
-    --label-field 'obj_label' \
-    --tokenize-labels \
-    --filter \
-    --print-lama
+```bash
+wget https://dl.fbaipublicfiles.com/LAMA/data.zip
+unzip data.zip
+rm data.zip
 ```
 
-## Label Token Selection
+### 3. Download the models
 
-For sentiment analysis
-```
-python -m autoprompt.label_search --train ../data/SST-2/train.tsv --template '[CLS] {sentence} [T] [T] [T] [P]. [SEP]' --label-map '{"0": 0, "1": 1}' --iters 50 --model-name 'bert-base-cased'
-```
+#### DISCLAIMER: ~55 GB on disk
 
-For NLI
-```
-python -m autoprompt.label_search --train ../data/SICK-E-balanced/3-balance/SICK_TRAIN_ALL_S.tsv --template '[CLS] {sentence} [T] [T] [T] [P]. [SEP]' --label-map '{"entailment": 0, "contradiction": 1, "neutral": 2}' --iters 50 --model-name 'bert-base-cased'
+Install spacy model
+```bash
+python3 -m spacy download en
 ```
 
-## Evaluation for Fact Retrieval and Relation Extraction
-
-### 1. Setup LAMA
-Clone [our fork](https://github.com/taylorshin/LAMA) of the LAMA repo and follow the directions to set it up outside of the AutoPrompt repo.
-We recommended creating a separate conda environment for LAMA due to different dependencies and requirements.
-
-Copy the AutoPrompt data folder into the `data` directory of LAMA or set `data_path_pre` in `scripts/run_experiments.py` to a custom data location.
-
-### 2. Update prompts
-Update the `data/relations.jsonl` file with your own automatically generated prompts
-
-### 3. Configure settings
-To change evaluation settings, go to `scripts/run_experiments.py` and update the configurable values accordingly.
-Note: each of the configurable settings are marked with a `[CONFIGURABLE]` comment.
-
-- Uncomment the settings of the LM you want to evaluate with (and comment out the other LM settings) in the `LMs` list at the top of the file
-- Update the `common_vocab_filename` field to the appropriate file. Anything evaluating both BERT and RoBERTa requires this field to be `common_vocab_cased_rob.txt` instead of the usual `common_vocab_cased.txt`.
-- Set `use_ctx` to `True` if running evaluation for Relation Extraction
-- Set `synthetic` to `True` for perturbed sentence evaluation for Relation Extraction
-- In `get_TREx_parameters` function, set `data_path_pre` to the corresponding data path (e.g. `"../data/relation_extraction"` for Relation Extraction)
-
-### 4. Evaluate prompts
-Run the evaluation code
+Download the models
+```bash
+chmod +x download_models.sh
+./download_models.sh
 ```
+
+The script will create and populate a _pre-trained_language_models_ folder.
+If you are interested in a particular model please edit the script.
+
+
+### 4. Run the experiments
+
+```bash
 python scripts/run_experiments.py
 ```
 
-### 4. Miscellaneous
-Set `PYTHONPATH` if the following error occurs: `ModuleNotFoundError: No module named 'lama'`
-```
-export PYTHONPATH="${PYTHONPATH}:/path/to/the/AutoPrompt/repo"
+results will be logged in _output/_ and  _last_results.csv_.
+
+## Other versions of LAMA
+
+### LAMA-UHN
+
+This repository also provides a script (`scripts/create_lama_uhn.py`) to create the data used in (Poerner et al., 2019).
+
+### Negated-LAMA
+This repository also gives the option to evalute how pretrained language models handle negated probes (Kassner et al., 2019), set the flag `use_negated_probes` in `scripts/run_experiments.py`. Also, you should use this version of the LAMA probe https://dl.fbaipublicfiles.com/LAMA/negated_data.tar.gz
+
+## What else can you do with LAMA?
+
+### 1. Encode a list of sentences
+and use the vectors in your downstream task!
+
+```bash
+pip install -e git+https://github.com/facebookresearch/LAMA#egg=LAMA
 ```
 
-## Citation
+```python
+import argparse
+from lama.build_encoded_dataset import encode, load_encoded_dataset
+
+PARAMETERS= {
+        "lm": "bert",
+        "bert_model_name": "bert-large-cased",
+        "bert_model_dir":
+        "pre-trained_language_models/bert/cased_L-24_H-1024_A-16",
+        "bert_vocab_name": "vocab.txt",
+        "batch_size": 32
+        }
+
+args = argparse.Namespace(**PARAMETERS)
+
+sentences = [
+        ["The cat is on the table ."],  # single-sentence instance
+        ["The dog is sleeping on the sofa .", "He makes happy noises ."],  # two-sentence
+        ]
+
+encoded_dataset = encode(args, sentences)
+print("Embedding shape: %s" % str(encoded_dataset[0].embedding.shape))
+print("Tokens: %r" % encoded_dataset[0].tokens)
+
+# save on disk the encoded dataset
+encoded_dataset.save("test.pkl")
+
+# load from disk the encoded dataset
+new_encoded_dataset = load_encoded_dataset("test.pkl")
+print("Embedding shape: %s" % str(new_encoded_dataset[0].embedding.shape))
+print("Tokens: %r" % new_encoded_dataset[0].tokens)
 ```
-@inproceedings{autoprompt:emnlp20,
-  author = {Taylor Shin and Yasaman Razeghi and Robert L. Logan IV and Eric Wallace and Sameer Singh},
-  title = { {AutoPrompt}: Automatic Prompt Construction for Masked Language Models },
-  booktitle = {Empirical Methods in Natural Language Processing (EMNLP)},
-  year = {2020}
-}
+
+### 2. Fill a sentence with a gap.
+
+You should use the symbol ```[MASK]``` to specify the gap.
+Only single-token gap supported - i.e., a single ```[MASK]```.
+```bash
+python lama/eval_generation.py  \
+--lm "bert"  \
+--t "The cat is on the [MASK]."
 ```
+<img align="middle" src="img/cat_on_the_phone.png" height="470" alt="cat_on_the_phone">
+<img align="middle" src="img/cat_on_the_phone.jpg" height="190" alt="cat_on_the_phone">
+<sub><sup>source: https://commons.wikimedia.org/wiki/File:Bluebell_on_the_phone.jpg</sup></sub>
+
+Note that you could use this functionality to answer _cloze-style_ questions, such as:
+
+```bash
+python lama/eval_generation.py  \
+--lm "bert"  \
+--t "The theory of relativity was developed by [MASK] ."
+```
+
+
+## Install LAMA with pip
+
+Clone the repo
+```bash
+git clone git@github.com:facebookresearch/LAMA.git && cd LAMA
+```
+Install as an editable package:
+```bash
+pip install --editable .
+```
+
+If you get an error in mac os x, please try running this instead
+```bash
+CFLAGS="-Wno-deprecated-declarations -std=c++11 -stdlib=libc++" pip install --editable .
+```
+
+
+## Language Model(s) options
+
+Option to indicate which language model(s) to use:
+* __--language-models/--lm__ : comma separated list of language models (__REQUIRED__)
+
+### BERT
+BERT pretrained models can be loaded both: (i) passing the name of the model and using huggingface cached versions or (ii) passing the folder containing the vocabulary and the PyTorch pretrained model (look at convert_tf_checkpoint_to_pytorch in [here](https://github.com/huggingface/pytorch-pretrained-BERT) to convert the TensorFlow model to PyTorch).
+
+* __--bert-model-dir/--bmd__ : directory that contains the BERT pre-trained model and the vocabulary
+* __--bert-model-name/--bmn__ : name of the huggingface cached versions of the BERT pre-trained model (default = 'bert-base-cased')
+* __--bert-vocab-name/--bvn__ : name of vocabulary used to pre-train the BERT model (default = 'vocab.txt')
+
+
+### RoBERTa
+
+* __--roberta-model-dir/--rmd__ : directory that contains the RoBERTa pre-trained model and the vocabulary (__REQUIRED__)
+* __--roberta-model-name/--rmn__ : name of the RoBERTa pre-trained model (default = 'model.pt')
+* __--roberta-vocab-name/--rvn__ : name of vocabulary used to pre-train the RoBERTa model (default = 'dict.txt')
+
+
+### ELMo
+
+* __--elmo-model-dir/--emd__ : directory that contains the ELMo pre-trained model and the vocabulary (__REQUIRED__)
+* __--elmo-model-name/--emn__ : name of the ELMo pre-trained model (default = 'elmo_2x4096_512_2048cnn_2xhighway')
+* __--elmo-vocab-name/--evn__ : name of vocabulary used to pre-train the ELMo model (default = 'vocab-2016-09-10.txt')
+
+
+### Transformer-XL
+
+* __--transformerxl-model-dir/--tmd__ : directory that contains the pre-trained model and the vocabulary (__REQUIRED__)
+* __--transformerxl-model-name/--tmn__ : name of the pre-trained model (default = 'transfo-xl-wt103')
+
+
+### GPT
+
+* __--gpt-model-dir/--gmd__ : directory that contains the gpt pre-trained model and the vocabulary (__REQUIRED__)
+* __--gpt-model-name/--gmn__ : name of the gpt pre-trained model (default = 'openai-gpt')
+
+
+## Evaluate Language Model(s) Generation
+
+options:
+* __--text/--t__ : text to compute the generation for
+* __--i__ : interactive mode <br>
+one of the two is required
+
+example considering both BERT and ELMo:
+```bash
+python lama/eval_generation.py \
+--lm "bert,elmo" \
+--bmd "pre-trained_language_models/bert/cased_L-24_H-1024_A-16/" \
+--emd "pre-trained_language_models/elmo/original/" \
+--t "The cat is on the [MASK]."
+```
+
+example considering only BERT with the default pre-trained model, in an interactive fashion:
+```bash
+python lamas/eval_generation.py  \
+--lm "bert"  \
+--i
+```
+
+
+## Get Contextual Embeddings
+
+```bash
+python lama/get_contextual_embeddings.py \
+--lm "bert,elmo" \
+--bmn bert-base-cased \
+--emd "pre-trained_language_models/elmo/original/"
+```
+
+
+## Troubleshooting
+
+If the module cannot be found, preface the python command with `PYTHONPATH=.`
+
+If the experiments fail on GPU memory allocation, try reducing batch size.
+
+## Acknowledgements
+
+* [https://github.com/huggingface/pytorch-pretrained-BERT](https://github.com/huggingface/pytorch-pretrained-BERT)
+* [https://github.com/allenai/allennlp](https://github.com/allenai/allennlp)
+* [https://github.com/pytorch/fairseq](https://github.com/pytorch/fairseq)
+
+
+## Other References
+
+- __(Kassner et al., 2019)__ Nora Kassner, Hinrich Schütze. _Negated LAMA: Birds cannot fly_. arXiv preprint arXiv:1911.03343, 2019.
+
+- __(Poerner et al., 2019)__ Nina Poerner, Ulli Waltinger, and Hinrich Schütze. _BERT is Not a Knowledge Base (Yet): Factual Knowledge vs. Name-Based Reasoning in Unsupervised QA_. arXiv preprint arXiv:1911.03681, 2019.
+
+- __(Dai et al., 2019)__ Zihang Dai, Zhilin Yang, Yiming Yang, Jaime G. Carbonell, Quoc V. Le, and Ruslan Salakhutdi. _Transformer-xl: Attentive language models beyond a fixed-length context_. CoRR, abs/1901.02860.
+
+- __(Peters et al., 2018)__ Matthew E. Peters, Mark Neumann, Mohit Iyyer, Matt Gardner, Christopher Clark, Kenton Lee, and Luke Zettlemoyer. 2018. _Deep contextualized word representations_. NAACL-HLT 2018
+
+- __(Devlin et al., 2018)__ Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. 2018. _BERT: pre-training of deep bidirectional transformers for language understanding_. CoRR, abs/1810.04805.
+
+- __(Radford et al., 2018)__ Alec Radford, Karthik Narasimhan, Tim Salimans, and Ilya Sutskever. 2018. _Improving language understanding by generative pre-training_.
+
+- __(Liu et al., 2019)__ Yinhan Liu, Myle Ott, Naman Goyal, Jingfei Du, Mandar Joshi, Danqi Chen, Omer Levy, Mike Lewis, Luke Zettlemoyer, Veselin Stoyanov. 2019. _RoBERTa: A Robustly Optimized BERT Pretraining Approach_. arXiv preprint arXiv:1907.11692.
+
+
+## Licence
+
+LAMA is licensed under the CC-BY-NC 4.0 license. The text of the license can be found [here](LICENSE).
