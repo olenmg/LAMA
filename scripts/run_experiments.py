@@ -19,22 +19,23 @@ from operator import itemgetter
 import random
 import numpy as np
 
+# [CONFIGURABLE]: uncomment BERT settings if you want to evaluate with BERT and vice versa with RoBERTa
 LMs = [
-    {
-        "lm": "bert",
-        "label": "bert_base",
-        "models_names": ["bert"],
-        "bert_model_name": "bert-base-cased",
-        "bert_model_dir": "pre-trained_language_models/bert/cased_L-12_H-768_A-12"
-    },
     # {
-    #     "lm": "roberta",
-    #     "label": "roberta_large",
-    #     "models_names": ["roberta"],
-    #     "roberta_model_name": "model.pt",
-    #     "roberta_model_dir": "pre-trained_language_models/roberta/roberta.large",
-    #     "roberta_vocab_name": "dict.txt"
-    # }
+    #     "lm": "bert",
+    #     "label": "bert_base",
+    #     "models_names": ["bert"],
+    #     "bert_model_name": "bert-base-cased",
+    #     "bert_model_dir": "pre-trained_language_models/bert/cased_L-12_H-768_A-12"
+    # },
+    {
+        "lm": "roberta",
+        "label": "roberta_large",
+        "models_names": ["roberta"],
+        "roberta_model_name": "model.pt",
+        "roberta_model_dir": "pre-trained_language_models/roberta/roberta.large",
+        "roberta_vocab_name": "dict.txt"
+    }
 ]
 
 def run_experiments(
@@ -72,21 +73,21 @@ def run_experiments(
             "dataset_filename": "{}/{}/{}".format(
                 data_path_pre, relation["relation"], data_path_post
             ),
-            "common_vocab_filename": "pre-trained_language_models/common_vocab_cased_RoB.txt", # NOTE: BERT + RoBERTa -> common_vocab_cased_RoB.txt
+            "common_vocab_filename": "pre-trained_language_models/common_vocab_cased_rob.txt", # [CONFIGURABLE]: BERT -> common_vocab_cased.txt,  BERT + RoBERTa -> common_vocab_cased_rob.txt
             "template": "",
             "bert_vocab_name": "vocab.txt",
-            "batch_size": 64, # NOTE: 64 for UNCONDITIONAL and 48/32 for CONDITIONAL
+            "batch_size": 64, # [CONFIGURABLE]: 64 for Fact Retrieval and 32 for Relation Extraction (on a NVIDIA GeForce GTX 1080ti)
             "logdir": "output",
             "full_logdir": "output/results/{}/{}".format(
                 input_param["label"], relation["relation"]
             ),
             "lowercase": False,
             "max_sentence_length": 50, # used to be 100
-            "threads": -1, # NOTE: Tesla M60 (Azure) has 6 CPUs
+            "threads": -1,
             "interactive": False,
             "use_negated_probes": use_negated_probes,
-            "use_ctx": False, # NOTE: Toggle for conditional probing
-            "synthetic": False # NOTE: Toggle for synthetic objects 
+            "use_ctx": False, # [CONFIGURABLE]: Toggle for Relation Extraction
+            "synthetic": False # [CONFIGURABLE]: Toggle for perturbed sentence evaluation for Relation Extraction
         }
 
         if "template" in relation:
@@ -99,7 +100,7 @@ def run_experiments(
 
         args = argparse.Namespace(**PARAMETERS)
 
-        # NOTE: This is for easy recording of metrics across train, dev, test sets for each relation
+        # This is for easy recording of metrics across train, dev, test sets for each relation
         if relation['relation'] not in metrics:
             metrics[relation['relation']] = {
                 'train': {
@@ -137,7 +138,7 @@ def run_experiments(
         all_Precision1.append(Precision1)
         all_Precision1_RE.append(Precision1_RE)
 
-        # NOTE: This is for easy recording of metrics across train, dev, test sets for each relation
+        # This is for easy recording of metrics across train, dev, test sets for each relation
         if args.use_ctx:
             metrics[relation['relation']][dataset_type]['p1'] = round(Precision1_RE * 100.0, 2)
         else:
@@ -185,39 +186,12 @@ def run_experiments(
 
 def get_TREx_parameters(data_path_post, data_path_pre="data/"):
     relations = load_file("{}relations.jsonl".format(data_path_pre))
-    # data_path_pre += "TREx/"
-    ############################################ CONFIGURABLE ############################################
-    data_path_pre = "data/LMAT/TREx_RoB_uncond"
-    ######################################################################################################
-    # data_path_post = "train.jsonl"
-    # data_path_post = "val.jsonl"
-    # data_path_post = "test.jsonl"
-    return relations, data_path_pre, data_path_post
-
-
-def get_GoogleRE_parameters():
-    relations = [
-        {
-            "relation": "place_of_birth",
-            "template": "[X] was born in [Y] .",
-            "template_negated": "[X] was not born in [Y] .",
-        },
-        {
-            "relation": "date_of_birth",
-            "template": "[X] (born [Y]).",
-            "template_negated": "[X] (not born [Y]).",
-        },
-        {
-            "relation": "place_of_death",
-            "template": "[X] died in [Y] .",
-            "template_negated": "[X] did not die in [Y] .",
-        },
-    ]
-    # data_path_pre = "data/Google_RE/"
-    # data_path_post = "_test.jsonl"
-    data_path_pre = "data/LMAT/Google_RE"
-    # data_path_post = "test.jsonl"
-    data_path_post = "train.jsonl"
+    ############################################ [CONFIGURABLE] ############################################
+    """
+    For fact retrieval, the data path would look something like "../data/fact_retrieval/original_rob"
+    """
+    data_path_pre = "../data/relation_extraction"
+    ########################################################################################################
     return relations, data_path_pre, data_path_post
 
 
@@ -228,10 +202,17 @@ def run_all_LMs(parameters, metrics, dataset_type):
 
 
 def print_all_relation_metrics(metrics):
+    avg_mrr_test = 0
+    avg_p10_test = 0
+    avg_p1_test = 0
     for relation in metrics:
         rel_train = metrics[relation]['train']
         rel_dev = metrics[relation]['dev']
         rel_test = metrics[relation]['test']
+        # Calculate averages
+        avg_mrr_test += rel_test['mrr']
+        avg_p10_test += rel_test['p10']
+        avg_p1_test += rel_test['p1']
         print('{}: {} & {} & {} & {} & {} & {} & {} & {} & {}'.format(relation,
                                                                     rel_train['mrr'],
                                                                     rel_train['p10'],
@@ -242,24 +223,22 @@ def print_all_relation_metrics(metrics):
                                                                     rel_test['mrr'],
                                                                     rel_test['p10'],
                                                                     rel_test['p1']))
+    print('=' * 80)
+    print('Average Test MRR:', avg_mrr_test / len(metrics))
+    print('Average Test P@10:', avg_p10_test / len(metrics))
+    print('Average Test P@1:', avg_p1_test / len(metrics))
 
 
 if __name__ == "__main__":
-
-    # print("1. Google-RE")    
-    # parameters = get_GoogleRE_parameters()
-    # run_all_LMs(parameters)
-
-    # print("2. T-REx")
     metrics = {}
-    # print(('='*40) + ' TRAIN ' + ('='*40))
-    # data_path_post = 'train.jsonl'
-    # parameters = get_TREx_parameters(data_path_post)
-    # run_all_LMs(parameters, metrics, 'train')
-    # print(('='*40) + ' DEV ' + ('='*40))
-    # data_path_post = 'dev.jsonl'
-    # parameters = get_TREx_parameters(data_path_post)
-    # run_all_LMs(parameters, metrics, 'dev')
+    print(('='*40) + ' TRAIN ' + ('='*40))
+    data_path_post = 'train.jsonl'
+    parameters = get_TREx_parameters(data_path_post)
+    run_all_LMs(parameters, metrics, 'train')
+    print(('='*40) + ' DEV ' + ('='*40))
+    data_path_post = 'dev.jsonl'
+    parameters = get_TREx_parameters(data_path_post)
+    run_all_LMs(parameters, metrics, 'dev')
     print(('='*40) + ' TEST ' + ('='*40))
     data_path_post = 'test.jsonl'
     parameters = get_TREx_parameters(data_path_post)
